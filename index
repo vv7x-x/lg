@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LG TV Remote</title>
+  <style>
+    body {
+      background-color: #121212;
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    input, button {
+      margin: 10px;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+    button {
+      background-color: #1f1f1f;
+      color: white;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background-color: #333;
+    }
+    .status {
+      margin: 10px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>LG TV Remote</h1>
+  <input type="text" id="tv-ip" placeholder="Enter TV IP Address (e.g. 192.168.1.103)" />
+  <div class="status" id="status">Disconnected</div>
+  <div>
+    <button onclick="sendCommand('turnOn')">تشغيل الشاشة</button>
+    <button onclick="sendCommand('turnOff')">إطفاء الشاشة</button>
+    <button onclick="sendCommand('volumeUp')">رفع الصوت</button>
+    <button onclick="sendCommand('volumeDown')">خفض الصوت</button>
+    <button onclick="sendCommand('launchYouTube')">تشغيل YouTube</button>
+    <button onclick="sendCommand('hdmi1')">تحويل إلى HDMI 1</button>
+  </div>
+  <script>
+    let socket = null;
+    let isConnected = false;
+
+    async function sendCommand(command) {
+      const ip = document.getElementById('tv-ip').value.trim();
+      if (!ip) return alert("من فضلك أدخل IP الشاشة");
+
+      const status = document.getElementById('status');
+      const url = `ws://${ip}:3000`;
+
+      if (!isConnected) {
+        socket = new WebSocket(url);
+
+        socket.onopen = () => {
+          status.textContent = "Connected";
+          isConnected = true;
+          sendWebOSCommand(command);
+        };
+
+        socket.onerror = () => {
+          status.textContent = "Connection Failed";
+          isConnected = false;
+        };
+
+        socket.onclose = () => {
+          status.textContent = "Disconnected";
+          isConnected = false;
+        };
+      } else {
+        sendWebOSCommand(command);
+      }
+    }
+
+    function sendWebOSCommand(command) {
+      const cmdMap = {
+        turnOn: { type: "request", uri: "ssap://system/turnOn" },
+        turnOff: { type: "request", uri: "ssap://system/turnOff" },
+        volumeUp: { type: "request", uri: "ssap://audio/volumeUp" },
+        volumeDown: { type: "request", uri: "ssap://audio/volumeDown" },
+        launchYouTube: {
+          type: "request",
+          uri: "ssap://system.launcher/launch",
+          payload: { id: "youtube.leanback.v4" }
+        },
+        hdmi1: {
+          type: "request",
+          uri: "ssap://tv/switchInput",
+          payload: { inputId: "HDMI_1" }
+        }
+      };
+
+      if (cmdMap[command]) {
+        socket.send(JSON.stringify(cmdMap[command]));
+      } else {
+        alert("أمر غير معروف: " + command);
+      }
+    }
+  </script>
+</body>
+</html>
