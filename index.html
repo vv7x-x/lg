@@ -4,35 +4,80 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LG TV Remote</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap" rel="stylesheet">
   <style>
     body {
-      background-color: #121212;
-      color: white;
-      font-family: Arial, sans-serif;
+      background: radial-gradient(circle, #1b1b1b 0%, #121212 100%);
+      color: #ffffff;
+      font-family: 'Orbitron', sans-serif;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 20px;
+      padding: 30px;
+      min-height: 100vh;
     }
-    input, button {
-      margin: 10px;
-      padding: 10px 20px;
-      border: none;
-      border-radius: 8px;
-      font-size: 1rem;
+    h1 {
+      font-size: 2.5rem;
+      color: #00ffe7;
+      margin-bottom: 20px;
+      text-shadow: 0 0 10px #00ffe7;
     }
-    button {
-      background-color: #1f1f1f;
+    input {
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #444;
+      width: 260px;
+      margin-bottom: 15px;
+      background-color: #1e1e1e;
       color: white;
-      cursor: pointer;
-      transition: background 0.3s;
-    }
-    button:hover {
-      background-color: #333;
+      text-align: center;
     }
     .status {
-      margin: 10px;
+      margin-bottom: 20px;
       font-weight: bold;
+      color: #00ffe7;
+    }
+    .button-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 15px;
+      width: 100%;
+      max-width: 600px;
+      margin-bottom: 20px;
+    }
+    button {
+      background-color: #242424;
+      border: 1px solid #00ffe7;
+      border-radius: 10px;
+      padding: 12px 20px;
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    button:hover {
+      background-color: #00ffe7;
+      color: black;
+      transform: scale(1.05);
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      max-height: 200px;
+      overflow-y: auto;
+      width: 100%;
+      max-width: 600px;
+    }
+    ul li {
+      background-color: #1a1a1a;
+      padding: 10px;
+      margin: 5px 0;
+      border: 1px solid #333;
+      border-radius: 8px;
+      transition: background 0.3s;
+    }
+    ul li:hover {
+      background-color: #2c2c2c;
     }
   </style>
 </head>
@@ -40,46 +85,67 @@
   <h1>LG TV Remote</h1>
   <input type="text" id="tv-ip" placeholder="Enter TV IP Address (e.g. 192.168.1.103)" />
   <div class="status" id="status">Disconnected</div>
-  <div>
+  <div class="button-container">
     <button onclick="sendCommand('turnOn')">تشغيل الشاشة</button>
     <button onclick="sendCommand('turnOff')">إطفاء الشاشة</button>
     <button onclick="sendCommand('volumeUp')">رفع الصوت</button>
     <button onclick="sendCommand('volumeDown')">خفض الصوت</button>
     <button onclick="sendCommand('launchYouTube')">تشغيل YouTube</button>
     <button onclick="sendCommand('hdmi1')">تحويل إلى HDMI 1</button>
+    <button onclick="scanNetwork()">🔍 فحص الشبكة</button>
   </div>
+  <ul id="scan-results"></ul>
+
   <script>
     let socket = null;
     let isConnected = false;
+    let clientKey = localStorage.getItem('clientKey') || null;
 
     async function sendCommand(command) {
       const ip = document.getElementById('tv-ip').value.trim();
       if (!ip) return alert("من فضلك أدخل IP الشاشة");
+      connectToTV(ip, command);
+    }
 
+    function connectToTV(ip, command) {
       const status = document.getElementById('status');
       const url = `ws://${ip}:3000`;
 
-      if (!isConnected) {
-        socket = new WebSocket(url);
+      socket = new WebSocket(url);
 
-        socket.onopen = () => {
-          status.textContent = "Connected";
-          isConnected = true;
+      socket.onopen = () => {
+        status.textContent = `Connected to ${ip}`;
+        isConnected = true;
+
+        const helloMsg = {
+          type: "hello",
+          payload: {
+            pairingType: "PROMPT",
+            clientKey: clientKey || undefined
+          }
+        };
+        socket.send(JSON.stringify(helloMsg));
+      };
+
+      socket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'registered' && msg.payload?.clientKey) {
+          localStorage.setItem('clientKey', msg.payload.clientKey);
+        }
+        if (msg.type === 'registered' && isConnected) {
           sendWebOSCommand(command);
-        };
+        }
+      };
 
-        socket.onerror = () => {
-          status.textContent = "Connection Failed";
-          isConnected = false;
-        };
+      socket.onerror = () => {
+        status.textContent = `Connection Failed (${ip})`;
+        isConnected = false;
+      };
 
-        socket.onclose = () => {
-          status.textContent = "Disconnected";
-          isConnected = false;
-        };
-      } else {
-        sendWebOSCommand(command);
-      }
+      socket.onclose = () => {
+        status.textContent = `Disconnected (${ip})`;
+        isConnected = false;
+      };
     }
 
     function sendWebOSCommand(command) {
@@ -104,6 +170,32 @@
         socket.send(JSON.stringify(cmdMap[command]));
       } else {
         alert("أمر غير معروف: " + command);
+      }
+    }
+
+    async function scanNetwork() {
+      const base = '192.168.1.';
+      const list = document.getElementById('scan-results');
+      list.innerHTML = '<li>جاري الفحص...</li>';
+
+      for (let i = 1; i <= 254; i++) {
+        const ip = base + i;
+        try {
+          const ws = new WebSocket(`ws://${ip}:3000`);
+          ws.onerror = () => {};
+          ws.onopen = () => {
+            const li = document.createElement('li');
+            li.textContent = `🖥️ جهاز LG تم العثور عليه: ${ip}`;
+            li.style.cursor = 'pointer';
+            li.onclick = () => {
+              document.getElementById('tv-ip').value = ip;
+              list.innerHTML = `<li>تم اختيار الجهاز: ${ip}</li>`;
+            };
+            list.appendChild(li);
+            ws.close();
+          };
+        } catch (err) {}
+        await new Promise(r => setTimeout(r, 30));
       }
     }
   </script>
